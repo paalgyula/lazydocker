@@ -255,7 +255,7 @@ func (gui *Gui) refreshContainersAndServices() error {
 	originalSelectedLineIdx := gui.Panels.Services.SelectedIdx
 	selectedService, isServiceSelected := gui.Panels.Services.List.TryGet(originalSelectedLineIdx)
 
-	containers, services, err := gui.DockerCommand.RefreshContainersAndServices(
+	containers, services, err := gui.ContainerCommand.RefreshContainersAndServices(
 		gui.Panels.Services.List.GetAllItems(),
 		gui.Panels.Containers.List.GetAllItems(),
 	)
@@ -283,7 +283,11 @@ func (gui *Gui) refreshContainersAndServices() error {
 }
 
 func (gui *Gui) renderContainersAndServices() error {
-	if gui.DockerCommand.InDockerComposeProject {
+	// Check if we're in a docker compose project by trying to get services
+	_, err := gui.ContainerCommand.GetServices()
+	inDockerComposeProject := err == nil
+	
+	if inDockerComposeProject {
 		if err := gui.Panels.Services.RerenderList(); err != nil {
 			return err
 		}
@@ -416,7 +420,7 @@ func (gui *Gui) handleContainerAttach(g *gocui.Gui, v *gocui.View) error {
 func (gui *Gui) handlePruneContainers() error {
 	return gui.createConfirmationPanel(gui.Tr.Confirm, gui.Tr.ConfirmPruneContainers, func(g *gocui.Gui, v *gocui.View) error {
 		return gui.WithWaitingStatus(gui.Tr.PruningStatus, func() error {
-			err := gui.DockerCommand.PruneContainers()
+			err := gui.ContainerCommand.PruneContainers()
 			if err != nil {
 				return gui.createErrorPanel(err.Error())
 			}
@@ -446,7 +450,7 @@ func (gui *Gui) handleContainersExecShell(g *gocui.Gui, v *gocui.View) error {
 }
 
 func (gui *Gui) containerExecShell(container *commands.Container) error {
-	commandObject := gui.DockerCommand.NewCommandObject(commands.CommandObject{
+	commandObject := gui.ContainerCommand.NewCommandObject(commands.CommandObject{
 		Container: container,
 	})
 
@@ -463,7 +467,7 @@ func (gui *Gui) handleContainersCustomCommand(g *gocui.Gui, v *gocui.View) error
 		return nil
 	}
 
-	commandObject := gui.DockerCommand.NewCommandObject(commands.CommandObject{
+	commandObject := gui.ContainerCommand.NewCommandObject(commands.CommandObject{
 		Container: ctr,
 	})
 
@@ -517,7 +521,7 @@ func (gui *Gui) handleContainersBulkCommand(g *gocui.Gui, v *gocui.View) error {
 	}
 
 	bulkCommands := append(baseBulkCommands, gui.Config.UserConfig.BulkCommands.Containers...)
-	commandObject := gui.DockerCommand.NewCommandObject(commands.CommandObject{})
+	commandObject := gui.ContainerCommand.NewCommandObject(commands.CommandObject{})
 
 	return gui.createBulkCommandMenu(bulkCommands, commandObject)
 }

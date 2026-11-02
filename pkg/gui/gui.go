@@ -27,7 +27,7 @@ import (
 type Gui struct {
 	g             *gocui.Gui
 	Log           *logrus.Entry
-	DockerCommand *commands.DockerCommand
+	ContainerCommand commands.ContainerCommand
 	OSCommand     *commands.OSCommand
 	State         guiState
 	Config        *config.AppConfig
@@ -125,7 +125,7 @@ func getScreenMode(config *config.AppConfig) WindowMaximisation {
 }
 
 // NewGui builds a new gui handler
-func NewGui(log *logrus.Entry, dockerCommand *commands.DockerCommand, oSCommand *commands.OSCommand, tr *i18n.TranslationSet, config *config.AppConfig, errorChan chan error) (*Gui, error) {
+func NewGui(log *logrus.Entry, containerCommand commands.ContainerCommand, oSCommand *commands.OSCommand, tr *i18n.TranslationSet, config *config.AppConfig, errorChan chan error) (*Gui, error) {
 	initialState := guiState{
 		Platform: *oSCommand.Platform,
 		Panels: &panelStates{
@@ -141,7 +141,7 @@ func NewGui(log *logrus.Entry, dockerCommand *commands.DockerCommand, oSCommand 
 
 	gui := &Gui{
 		Log:           log,
-		DockerCommand: dockerCommand,
+		ContainerCommand: containerCommand,
 		OSCommand:     oSCommand,
 		State:         initialState,
 		Config:        config,
@@ -292,7 +292,7 @@ func (gui *Gui) setPanels() {
 }
 
 func (gui *Gui) updateContainerDetails() error {
-	return gui.DockerCommand.RefreshContainerDetails(gui.Panels.Containers.List.GetAllItems())
+	return gui.ContainerCommand.RefreshContainerDetails(gui.Panels.Containers.List.GetAllItems())
 }
 
 func (gui *Gui) refresh() {
@@ -336,7 +336,25 @@ func (gui *Gui) listenForEvents(ctx context.Context, refresh func()) {
 
 outer:
 	for {
-		messageChan, errChan := gui.DockerCommand.Client.Events(context.Background(), events.ListOptions{})
+		// For Podman, we don't have direct event streaming like Docker
+		// We'll use a different approach for Podman
+		var messageChan <-chan events.Message
+		var errChan <-chan error
+		
+		if dockerCmd, ok := gui.ContainerCommand.(*commands.DockerCommand); ok {
+			messageChan, errChan = dockerCmd.Client.Events(context.Background(), events.ListOptions{})
+		} else {
+			// For Podman, we'll use a simple ticker instead of event streaming
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			messageChan = make(<-chan events.Message)
+			errChan = make(<-chan error)
+			go func() {
+				for range ticker.C {
+					refresh()
+				}
+			}()
+		}
 
 		if errorCount > 0 {
 			select {
@@ -459,7 +477,9 @@ func (gui *Gui) ShouldRefresh(key string) bool {
 }
 
 func (gui *Gui) initiallyFocusedViewName() string {
-	if gui.DockerCommand.InDockerComposeProject {
+	// Check if we're in a docker compose project by checking if we can get services
+	_, err := gui.ContainerCommand.GetServices()
+	if err == nil {
 		return "services"
 	}
 	return "containers"
@@ -485,7 +505,7 @@ func (gui *Gui) monitorContainerStats(ctx context.Context) {
 		case <-ticker.C:
 			for _, container := range gui.Panels.Containers.List.GetAllItems() {
 				if !container.MonitoringStats {
-					go gui.DockerCommand.CreateClientStatMonitor(container)
+					go gui.ContainerCommand.CreateClientStatMonitor(container)
 				}
 			}
 		}

@@ -21,6 +21,7 @@ type App struct {
 	Log           *logrus.Entry
 	OSCommand     *commands.OSCommand
 	DockerCommand *commands.DockerCommand
+	PodmanCommand *commands.PodmanCommand
 	Gui           *gui.Gui
 	Tr            *i18n.TranslationSet
 	ErrorChan     chan error
@@ -43,12 +44,23 @@ func NewApp(config *config.AppConfig) (*App, error) {
 
 	// here is the place to make use of the docker-compose.yml file in the current directory
 
-	app.DockerCommand, err = commands.NewDockerCommand(app.Log, app.OSCommand, app.Tr, app.Config, app.ErrorChan)
-	if err != nil {
-		return app, err
+	var containerCommand commands.ContainerCommand
+	if config.UsePodman {
+		app.PodmanCommand, err = commands.NewPodmanCommand(app.Log, app.OSCommand, app.Tr, app.Config, app.ErrorChan)
+		if err != nil {
+			return app, err
+		}
+		containerCommand = app.PodmanCommand
+		app.closers = append(app.closers, app.PodmanCommand)
+	} else {
+		app.DockerCommand, err = commands.NewDockerCommand(app.Log, app.OSCommand, app.Tr, app.Config, app.ErrorChan)
+		if err != nil {
+			return app, err
+		}
+		containerCommand = app.DockerCommand
+		app.closers = append(app.closers, app.DockerCommand)
 	}
-	app.closers = append(app.closers, app.DockerCommand)
-	app.Gui, err = gui.NewGui(app.Log, app.DockerCommand, app.OSCommand, app.Tr, config, app.ErrorChan)
+	app.Gui, err = gui.NewGui(app.Log, containerCommand, app.OSCommand, app.Tr, config, app.ErrorChan)
 	if err != nil {
 		return app, err
 	}

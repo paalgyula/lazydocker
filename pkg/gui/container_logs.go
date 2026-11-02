@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/fatih/color"
 	"github.com/jesseduffield/lazydocker/pkg/commands"
 	"github.com/jesseduffield/lazydocker/pkg/tasks"
@@ -105,48 +104,54 @@ func (gui *Gui) promptToReturn() {
 }
 
 func (gui *Gui) writeContainerLogs(ctr *commands.Container, ctx context.Context, writer io.Writer) error {
-	readCloser, err := gui.DockerCommand.Client.ContainerLogs(ctx, ctr.ID, container.LogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		Timestamps: gui.Config.UserConfig.Logs.Timestamps,
-		Since:      gui.Config.UserConfig.Logs.Since,
-		Tail:       gui.Config.UserConfig.Logs.Tail,
-		Follow:     true,
-	})
-	if err != nil {
+	// Use CLI command instead of Docker API for compatibility with Podman
+	var cmd *exec.Cmd
+	if gui.Config.UsePodman {
+		cmd = gui.OSCommand.ExecutableFromString(fmt.Sprintf("podman logs --follow %s", ctr.ID))
+	} else {
+		cmd = gui.OSCommand.ExecutableFromString(fmt.Sprintf("docker logs --follow %s", ctr.ID))
+	}
+	
+	// Add log options
+	if gui.Config.UserConfig.Logs.Timestamps {
+		if gui.Config.UsePodman {
+			cmd = gui.OSCommand.ExecutableFromString(fmt.Sprintf("podman logs --follow --timestamps %s", ctr.ID))
+		} else {
+			cmd = gui.OSCommand.ExecutableFromString(fmt.Sprintf("docker logs --follow --timestamps %s", ctr.ID))
+		}
+	}
+	
+	if gui.Config.UserConfig.Logs.Since != "" {
+		if gui.Config.UsePodman {
+			cmd = gui.OSCommand.ExecutableFromString(fmt.Sprintf("podman logs --follow --since=%s %s", gui.Config.UserConfig.Logs.Since, ctr.ID))
+		} else {
+			cmd = gui.OSCommand.ExecutableFromString(fmt.Sprintf("docker logs --follow --since=%s %s", gui.Config.UserConfig.Logs.Since, ctr.ID))
+		}
+	}
+	
+	if gui.Config.UserConfig.Logs.Tail != "" {
+		if gui.Config.UsePodman {
+			cmd = gui.OSCommand.ExecutableFromString(fmt.Sprintf("podman logs --follow --tail=%s %s", gui.Config.UserConfig.Logs.Tail, ctr.ID))
+		} else {
+			cmd = gui.OSCommand.ExecutableFromString(fmt.Sprintf("docker logs --follow --tail=%s %s", gui.Config.UserConfig.Logs.Tail, ctr.ID))
+		}
+	}
+	
+	// Set up the command with proper output handling
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	
+	// Start the command
+	if err := cmd.Start(); err != nil {
 		gui.Log.Error(err)
 		return err
 	}
-	defer readCloser.Close()
-
-	if !ctr.DetailsLoaded() {
-		// loop until the details load or context is cancelled, using timer
-		ticker := time.NewTicker(time.Millisecond * 100)
-		defer ticker.Stop()
-	outer:
-		for {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-ticker.C:
-				if ctr.DetailsLoaded() {
-					break outer
-				}
-			}
-		}
-	}
-
-	if ctr.Details.Config.Tty {
-		_, err = io.Copy(writer, readCloser)
-		if err != nil {
-			return err
-		}
-	} else {
-		_, err = stdcopy.StdCopy(writer, writer, readCloser)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	
+	// Wait for context cancellation or command completion
+	go func() {
+		<-ctx.Done()
+		cmd.Process.Kill()
+	}()
+	
+	return cmd.Wait()
 }

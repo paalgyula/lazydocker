@@ -128,7 +128,10 @@ func (gui *Gui) createAllViews() error {
 
 	gui.Views.Containers.Highlight = true
 	gui.Views.Containers.SelBgColor = selectedLineBgColor
-	if gui.Config.UserConfig.Gui.ShowAllContainers || !gui.DockerCommand.InDockerComposeProject {
+	// Check if we're in a docker compose project
+	_, err = gui.ContainerCommand.GetServices()
+	inDockerComposeProject := err == nil
+	if gui.Config.UserConfig.Gui.ShowAllContainers || !inDockerComposeProject {
 		gui.Views.Containers.Title = gui.Tr.ContainersTitle
 	} else {
 		gui.Views.Containers.Title = gui.Tr.StandaloneContainersTitle

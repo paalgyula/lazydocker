@@ -488,10 +488,11 @@ type AppConfig struct {
 	UserConfig  *UserConfig
 	ConfigDir   string
 	ProjectDir  string
+	UsePodman   bool
 }
 
 // NewAppConfig makes a new app config
-func NewAppConfig(name, version, commit, date string, buildSource string, debuggingFlag bool, composeFiles []string, projectDir string) (*AppConfig, error) {
+func NewAppConfig(name, version, commit, date string, buildSource string, debuggingFlag bool, composeFiles []string, projectDir string, usePodman bool) (*AppConfig, error) {
 	configDir, err := findOrCreateConfigDir(name)
 	if err != nil {
 		return nil, err
@@ -517,6 +518,7 @@ func NewAppConfig(name, version, commit, date string, buildSource string, debugg
 		UserConfig:  userConfig,
 		ConfigDir:   configDir,
 		ProjectDir:  projectDir,
+		UsePodman:   usePodman,
 	}
 
 	return appConfig, nil

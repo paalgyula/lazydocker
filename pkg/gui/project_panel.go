@@ -23,7 +23,8 @@ func (gui *Gui) getProjectPanel() *panels.SideListPanel[*commands.Project] {
 	return &panels.SideListPanel[*commands.Project]{
 		ContextState: &panels.ContextState[*commands.Project]{
 			GetMainTabs: func() []panels.MainTab[*commands.Project] {
-				if gui.DockerCommand.InDockerComposeProject {
+				_, err := gui.ContainerCommand.GetServices()
+				if err == nil {
 					return []panels.MainTab[*commands.Project]{
 						{
 							Key:    "logs",
@@ -79,7 +80,8 @@ func (gui *Gui) refreshProject() error {
 
 func (gui *Gui) getProjectName() string {
 	projectName := path.Base(gui.Config.ProjectDir)
-	if gui.DockerCommand.InDockerComposeProject {
+	_, err := gui.ContainerCommand.GetServices()
+	if err == nil {
 		for _, service := range gui.Panels.Services.List.GetAllItems() {
 			container := service.Container
 			if container != nil && container.DetailsLoaded() {
@@ -122,7 +124,7 @@ func (gui *Gui) renderAllLogs(_project *commands.Project) tasks.TaskFunc {
 			cmd := gui.OSCommand.RunCustomCommand(
 				utils.ApplyTemplate(
 					gui.Config.UserConfig.CommandTemplates.AllLogs,
-					gui.DockerCommand.NewCommandObject(commands.CommandObject{}),
+					gui.ContainerCommand.NewCommandObject(commands.CommandObject{}),
 				),
 			)
 
@@ -146,7 +148,7 @@ func (gui *Gui) renderAllLogs(_project *commands.Project) tasks.TaskFunc {
 
 func (gui *Gui) renderDockerComposeConfig(_project *commands.Project) tasks.TaskFunc {
 	return gui.NewSimpleRenderStringTask(func() string {
-		return utils.ColoredYamlString(gui.DockerCommand.DockerComposeConfig())
+		return utils.ColoredYamlString(gui.ContainerCommand.DockerComposeConfig())
 	})
 }
 
@@ -173,7 +175,7 @@ func lazydockerTitle() string {
 
 // handleViewAllLogs switches to a subprocess viewing all the logs from docker-compose
 func (gui *Gui) handleViewAllLogs(g *gocui.Gui, v *gocui.View) error {
-	c, err := gui.DockerCommand.ViewAllLogs()
+	c, err := gui.ContainerCommand.ViewAllLogs()
 	if err != nil {
 		return gui.createErrorPanel(err.Error())
 	}
